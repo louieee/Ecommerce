@@ -4,7 +4,8 @@ from drf_yasg.views import get_schema_view
 from rest_framework import permissions
 from rest_framework.routers import SimpleRouter
 
-from api.v1.views import UnitAPI, CategoryAPI, ProductBatchAPI, SaleAPI, ProductAPI
+from api.v1.views import UnitAPI, CategoryAPI, ProductBatchAPI, SaleAPI, ProductAPI, ProductListAPI, ProductUnitListAPI
+
 swagger_view = get_schema_view(
     info=openapi.Info(
         title=f"Ecommerce Backend API",
@@ -30,5 +31,7 @@ urlpatterns = [
         swagger_view.with_ui("redoc", cache_timeout=0),
         name="swagger_redocs",
     ),
+    path("products", ProductListAPI.as_view()),
+    path("product-units", ProductUnitListAPI.as_view())
 ]
 urlpatterns += router.urls

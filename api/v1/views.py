@@ -1,14 +1,18 @@
+import logging
+
 from django.db import transaction
 from django.db.models import Q
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import viewsets
+from rest_framework.generics import ListAPIView
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from api.v1.serializers import UnitSerializer, CategorySerializer, ProductBatchSerializer, SaleTransactionSerializer, \
     CreateSaleTransactionSerializer, CreateProductBatchSerializer, UpdateProductBatchSerializer, ProductSerializer, \
-    MutateProductSerializer
-from app.models import Unit, Category, ProductBatch, SaleTransaction, Product
+    MutateProductSerializer, ProductUnitSerializer
+from app.models import Unit, Category, ProductBatch, SaleTransaction, Product, ProductUnit
 
 search_query  = openapi.Parameter(
     name="search",
@@ -43,28 +47,28 @@ class UnitAPI(viewsets.ModelViewSet):
         return queryset
 
     @swagger_auto_schema(
-        operation_summary="update product unit"
+        operation_summary="update unit"
     )
     @transaction.atomic
     def partial_update(self, request, *args, **kwargs):
         return super().partial_update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_summary="create product unit"
+        operation_summary="create unit"
     )
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_summary="list product units",
+        operation_summary="list units",
         manual_parameters=[search_query]
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_summary="retrieve product unit",
+        operation_summary="retrieve unit",
     )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
@@ -110,6 +114,7 @@ class CategoryAPI(viewsets.ModelViewSet):
 class ProductBatchAPI(viewsets.ModelViewSet):
     queryset = ProductBatch.objects.order_by("-id")
     serializer_class = ProductBatchSerializer
+    permission_classes = (IsAuthenticated,)
     http_method_names = ("post", "patch", "get")
 
     def filter_queryset(self, queryset):
@@ -192,7 +197,7 @@ class SaleAPI(viewsets.ModelViewSet):
 class ProductAPI(viewsets.ModelViewSet):
     queryset = Product.objects.order_by("name")
     serializer_class = ProductSerializer
-    http_method_names = ("get","post", "patch")
+    http_method_names = ("post", "patch")
 
     def filter_queryset(self, queryset):
         search = self.request.query_params.get("search")
@@ -206,7 +211,8 @@ class ProductAPI(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         request_body=MutateProductSerializer,
-        operation_summary="create product"
+        operation_summary="create product",
+        tags=["products"]
     )
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -218,7 +224,8 @@ class ProductAPI(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         request_body=MutateProductSerializer,
-        operation_summary="update product"
+        operation_summary="update product",
+        tags=["products"]
     )
     @transaction.atomic
     def partial_update(self, request, *args, **kwargs):
@@ -241,3 +248,44 @@ class ProductAPI(viewsets.ModelViewSet):
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+class ProductUnitListAPI(ListAPIView):
+    queryset = ProductUnit.objects.order_by("product_id")
+    serializer_class = ProductUnitSerializer
+    http_method_names = ("get",)
+
+    def filter_queryset(self, queryset):
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(Q(unit__name__icontains=search)
+                                       |Q(product__name__icontains=search))
+        return queryset
+
+    @swagger_auto_schema(
+        operation_summary="list product units",
+        manual_parameters=[search_query],
+        tags=["products"]
+
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+
+class ProductListAPI(ListAPIView):
+    queryset = Product.objects.order_by("name")
+    serializer_class = ProductSerializer
+    http_method_names = ("get",)
+
+    def filter_queryset(self, queryset):
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        return queryset
+
+    @swagger_auto_schema(
+        operation_summary="list of products",
+        manual_parameters=[search_query],
+        tags=["products"]
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)

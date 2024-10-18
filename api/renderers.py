@@ -1,113 +1,219 @@
-from collections import OrderedDict
-
-from rest_framework import utils, exceptions
 from rest_framework.renderers import JSONRenderer
 
 
 class CustomJSONRenderer(JSONRenderer):
-    """Override the default JSON renderer to be consistent and have additional keys"""
-
     def render(self, data, accepted_media_type=None, renderer_context=None):
-        status_code = renderer_context["response"].status_code
-        if status_code == 500:
-            status_code = 400
-            renderer_context["response"].status_code = status_code
-        status = True if status_code < 400 else False
-        message = "successful" if status else "failed"
-        # when response data is a list, convert to dict
-        if data is None:
-            data = self.handle_null_data(status, data, message)
-        if isinstance(data, list):
-            data = self.handle_list_error(status, data, message)
-        elif type(list(data.values())[0]) == str:
-            data = {"status": status, "message": message, "data": data}
-        elif type(data) == utils.serializer_helpers.ReturnDict:
-            try:
-                if type(list(data.values())[0][0]) == exceptions.ErrorDetail:
-                    error = list(data.values())[0][0]
-                    code = list(data.values())[0][0].code
-                    key = list(data.keys())[0]
-                    message = (
-                        f"{key}: {error}"
-                        if key != "non_field_errors" and code not in ("unique",)
-                        else error
-                    )
-                    data = {"status": status, "message": message, "data": {}}
-                elif (
-                    type(list(list(data.values())[0][0].values())[0][0])
-                    == exceptions.ErrorDetail
-                ):
-                    error = list(list(data.values())[0][0].values())[0][0]
+        # Default response structure
+        response = {
+            'status': 'success',
+            'message': '',
+            'data': None
+        }
 
-                    key = list(list(data.values())[0][0].keys())[0]
-                    message = f"{key}: {error}" if key != "non_field_errors" else error
-                    data = {"status": status, "message": message, "data": {}}
-            except KeyError:
-                if (
-                    type(list(list(data.values())[0].values())[0][0])
-                    == exceptions.ErrorDetail
-                ):
-                    error = list(list(data.values())[0].values())[0][0]
-                    key = list(data.keys())[0]
-
-                    message = f"{key}: {error}" if key != "non_field_errors" else error
-                    data = {"status": status, "message": message, "data": {}}
-
-            except TypeError:
-                data = {"status": status, "message": message, "data": data}
-        elif isinstance(data, list):
-            data = self.handle_list_error(status, data, message)
-        elif data is None:
-            data = {"status": status, "message": message, "data": {}}
-
-        # if response data is not well formated dict, and not an error response, convert to right format
-        elif (
-            isinstance(data, OrderedDict)
-            and ("data" not in data)
-            and ("non_field_errors" not in data)
-        ):
-            data = {
-                "status": status,
-                "message": message,
-                "data": data,
-            }
-        elif isinstance(data, dict) and (
-            "detail" in data or "non_field_errors" in data
-        ):
-            res = list(data.values())[0]
-            data = {
-                "status": status,
-                "message": res[0] if isinstance(res, list) else res,
-                "data": {},
-            }
-
-        # if not `status` in response, add status
-        if "status" not in data:
-            data["status"] = status
-
-        # if no `message` in response, add message based on status
-        if "message" not in data:
-            data["message"] = message
-
-        # Added this so we can use `.move_to_end` to make `status` & `message` come on top
-        # if isinstance(data, dict):
-        # data = OrderedDict(data.items())
-
-        # removing to increase spead, since this is O(N), and only needed when
-        # returning some error responses
-        # data.move_to_end('message', last=False)
-        # data.move_to_end('status', last=False)
-
-        return super().render(data, accepted_media_type, renderer_context)
-
-    @staticmethod
-    def handle_list_error(status, data, message):
-        if data and type(data[0]) == exceptions.ErrorDetail:
-            data = {"status": status, "message": data[0], "data": {}}
+        # Handle errors: When `data` contains errors or status code >= 400
+        if renderer_context['response'].status_code >= 400:
+            response['status'] = 'error'
+            # Extract error message (flatten non-field errors if any)
+            response['message'] = self.extract_error_message(data)
+            response['data'] = None
         else:
-            data = {"status": status, "message": message, "data": data}
-        return data
+            # Success responses
+            response['data'] = data
 
-    @staticmethod
-    def handle_null_data(status, data, message):
-        return {"status": status, "message": message, "data": data}
+            # Check for custom messages passed via the view
+            if 'message' in renderer_context.get('response', {}):
+                response['message'] = renderer_context['response'].data.get('message', '')
+
+            # Handle ListSerializer responses (multiple objects)
+            if isinstance(data, list):
+                response['message'] = 'Data retrieved successfully'
+            # Handle DictSerializer or single object responses
+            elif isinstance(data, dict):
+                response['message'] = 'Operation successful'
+
+        # Render the final response
+        return super().render(response, accepted_media_type, renderer_context)
+
+    def extract_error_message2(self, data):
+        """Extract and flatten error messages from the data."""
+
+        # Case 1: Direct error messages (e.g., from the `detail` key)
+        if isinstance(data, dict):
+            if 'detail' in data:
+                return data['detail']
+
+            # Case 2: Field-level or non-field errors
+            errors = []
+            for key, value in data.items():
+                if isinstance(value, list):
+                    for item in value:
+                        # Handle non-field errors inside list items
+                        if isinstance(item, dict):
+                            nested_error = self.extract_error_message(item)
+                            if nested_error:
+                                errors.append(nested_error)
+                        # If it's a string, directly append it as an error message
+                        elif isinstance(item, str):
+                            errors.append(item)
+                # Handle nested dictionary errors (recursive call)
+                elif isinstance(value, dict):
+                    nested_error = self.extract_error_message(value)
+                    if nested_error:
+                        errors.append(nested_error)
+
+            # If errors were found, return them as a joined string
+            if errors:
+                return ', '.join(errors)
+
+        # Case 3: If it's a simple list of error strings, return the first error
+        if isinstance(data, list):
+            errors = [str(item) for item in data if isinstance(item, str)]
+            if errors:
+                return ', '.join(errors)
+
+        # Case 4: If no specific error message, return a default message (instead of blank)
+        return ''
+
+    def extract_error_message3(self, data):
+        """Extract and flatten error messages from the data."""
+
+        # Case 1: Direct error messages (e.g., from the `detail` key or simple error string)
+        if isinstance(data, dict):
+            if 'detail' in data:
+                return data['detail']
+
+            # Collect all errors from the dictionary
+            errors = []
+            for key, value in data.items():
+                if isinstance(value, list):
+                    for item in value:
+                        # Handle nested dictionaries for non-field errors
+                        if isinstance(item, dict):
+                            nested_error = self.extract_error_message(item)
+                            if nested_error:
+                                errors.append(f"{key}: {nested_error}")
+                        # If it's a string, treat it as a direct error message
+                        elif isinstance(item, str):
+                            errors.append(f"{key}: {item}")
+                # Handle nested dictionary errors recursively
+                elif isinstance(value, dict):
+                    nested_error = self.extract_error_message(value)
+                    if nested_error:
+                        errors.append(f"{key}: {nested_error}")
+                # If the value is a direct string error (common in validation)
+                elif isinstance(value, str):
+                    errors.append(f"{key}: {value}")
+
+            # Return a joined error message with key names included
+            if errors:
+                return ', '.join(errors)
+
+        # Case 2: Handle lists of strings (common in non-field errors)
+        if isinstance(data, list):
+            errors = [str(item) for item in data if isinstance(item, str)]
+            if errors:
+                return ', '.join(errors)
+
+        # Case 3: Fallback to a default message
+        return ''
+
+    def extract_error_message4(self, data):
+        """Extract and flatten error messages from the data."""
+
+        # Case 1: Direct error messages (e.g., from the `detail` key or simple error string)
+        if isinstance(data, dict):
+            if 'detail' in data:
+                return data['detail']
+
+            # Collect all errors from the dictionary
+            errors = []
+            for key, value in data.items():
+                if isinstance(value, list):
+                    for item in value:
+                        # Handle nested dictionaries for non-field errors
+                        if isinstance(item, dict):
+                            nested_error = self.extract_error_message(item)
+                            if nested_error:
+                                # For 'non_field_errors', exclude the key
+                                if key == 'non_field_errors':
+                                    errors.append(nested_error)
+                                else:
+                                    errors.append(f"{key}: {nested_error}")
+                        # If it's a string, treat it as a direct error message
+                        elif isinstance(item, str):
+                            # For 'non_field_errors', exclude the key
+                            if key == 'non_field_errors':
+                                errors.append(item)
+                            else:
+                                errors.append(f"{key}: {item}")
+                # Handle nested dictionary errors recursively
+                elif isinstance(value, dict):
+                    nested_error = self.extract_error_message(value)
+                    if nested_error:
+                        # For 'non_field_errors', exclude the key
+                        if key == 'non_field_errors':
+                            errors.append(nested_error)
+                        else:
+                            errors.append(f"{key}: {nested_error}")
+                # If the value is a direct string error (common in validation)
+                elif isinstance(value, str):
+                    # For 'non_field_errors', exclude the key
+                    if key == 'non_field_errors':
+                        errors.append(value)
+                    else:
+                        errors.append(f"{key}: {value}")
+
+            # Return a joined error message with key names included
+            if errors:
+                return ', '.join(errors)
+
+        # Case 2: Handle lists of strings (common in non-field errors)
+        if isinstance(data, list):
+            errors = [str(item) for item in data if isinstance(item, str)]
+            if errors:
+                return ', '.join(errors)
+
+        # Case 3: Fallback to a default message
+        return ''
+
+    def extract_error_message(self, data):
+        """Extract and return the first error message from the data."""
+
+        # Case 1: Direct error messages (e.g., from the `detail` key or simple error string)
+        if isinstance(data, dict):
+            if 'detail' in data:
+                return data['detail']
+
+            # Loop through dictionary to find the first error
+            for key, value in data.items():
+                if isinstance(value, list):
+                    for item in value:
+                        # Handle nested dictionaries for non-field errors
+                        if isinstance(item, dict):
+                            nested_error = self.extract_error_message(item)
+                            if nested_error:
+                                # For 'non_field_errors', return just the message
+                                return nested_error if key == 'non_field_errors' else f"{key}: {nested_error}"
+                        # If it's a string, treat it as a direct error message
+                        elif isinstance(item, str):
+                            return item if key == 'non_field_errors' else f"{key}: {item}"
+                # Handle nested dictionary errors recursively
+                elif isinstance(value, dict):
+                    nested_error = self.extract_error_message(value)
+                    if nested_error:
+                        return nested_error if key == 'non_field_errors' else f"{key}: {nested_error}"
+                # If the value is a direct string error (common in validation)
+                elif isinstance(value, str):
+                    return value if key == 'non_field_errors' else f"{key}: {value}"
+
+        # Case 2: Handle lists of strings (common in non-field errors)
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, str):
+                    return item
+
+        # Case 3: Fallback to a default message if no error is found
+        return
+
+
+

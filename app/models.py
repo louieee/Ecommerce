@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.db.models import F
 
@@ -11,6 +13,9 @@ class Unit(BaseModel):
 
 class Category(BaseModel):
     name = models.CharField(max_length=150, unique=True)
+
+    class Meta:
+        verbose_name_plural = "Categories"
 
     def __str__(self):
         return self.name
@@ -26,7 +31,6 @@ class Product(BaseModel):
 class ProductUnit(BaseModel):
     product = models.ForeignKey("Product", on_delete=models.CASCADE)
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
-    archived = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.unit.name}(s) of {self.product.name}"
@@ -58,33 +62,30 @@ class ProductBatch(BaseModel):
         db_persist=True
     )
 
+    class Meta:
+        verbose_name_plural = "Product Batches"
+
 class ProductSale(BaseModel):
     product_unit = models.ForeignKey("ProductUnit", on_delete=models.DO_NOTHING)
+    cost_price = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    selling_price = models.DecimalField(default=0, max_digits=10, decimal_places=2)
     quantity = models.PositiveIntegerField(default=0)
     sale = models.ForeignKey("SaleTransaction", on_delete=models.CASCADE, null=True, default=None)
 
-    def profit(self):
-        return self.product_unit.current_batch.profit * self.quantity
-
-    def total_selling_price(self):
-        return self.product_unit.current_batch.selling_price * self.quantity
-
-    def total_cost_price(self):
-        return self.product_unit.current_batch.cost_price * self.quantity
 
 class SaleTransaction(BaseModel):
     percentage_discount = models.DecimalField(default=0, max_digits=3, decimal_places=1)
     def actual_selling_price(self):
-        return sum(sale.total_selling_price() for sale in self.productsale_set.all())
+        return sum(sale.selling_price for sale in self.productsale_set.all())
 
     def actual_profit(self):
         return self.actual_selling_price() - self.total_cost_price()
 
     def total_cost_price(self):
-        return sum(sale.total_cost_price() for sale in self.productsale_set.all())
+        return sum(sale.cost_price for sale in self.productsale_set.all())
 
     def final_selling_price(self):
-        return self.actual_selling_price() - (self.actual_selling_price() * (self.percentage_discount/100))
+        return self.actual_selling_price() - (self.actual_selling_price() * Decimal(self.percentage_discount/100))
 
     def final_profit(self):
         return self.final_selling_price() - self.total_cost_price()

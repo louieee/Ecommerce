@@ -16,13 +16,21 @@ Including another URLconf
 """
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.contrib.auth import logout
+from django.shortcuts import redirect
 from django.urls import path, include
 
 from config import settings
 
+
+def swagger(request):
+    logout(request)
+    return redirect("swagger_docs")
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path("api/", include("api.urls")),
+    path("accounts/logout/", swagger, name="logout"),
 ]
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 

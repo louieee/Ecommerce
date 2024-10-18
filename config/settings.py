@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-o4vo6wo6=u+l!g9#ve5lz12m7&$50lm%9a=fm!ir5b$k*fd$$w'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 ALLOWED_HOSTS = ["louiking.pythonanywhere.com", "localhost"]
 
@@ -132,7 +132,7 @@ SWAGGER_SETTINGS = {
     # "DEFAULT_AUTO_SCHEMA_CLASS": "apps.api.inspectors.SwaggerAutoSchema",
     "USE_SESSION_AUTH": False,
     "SECURITY_DEFINITIONS": {
-        "Token": {"type": "apiKey", "name": "Authorization", "in": "header"}
+
     },
 }
 REST_FRAMEWORK = {
@@ -145,10 +145,12 @@ REST_FRAMEWORK = {
         "rest_framework.parsers.FormParser",
         "rest_framework.parsers.MultiPartParser"
     ],
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.BasicAuthentication",
+    ],
     "DEFAULT_PERMISSION_CLASSES":
- [
-        "rest_framework.permissions.AllowAny"
+    [
+        "rest_framework.permissions.AllowAny",
     ],
     "DEFAULT_THROTTLE_CLASSES": [],
 
