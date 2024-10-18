@@ -1,0 +1,5 @@
+ django-soft-delete==1.0.15
+ django==5.1.2
+ djangorestframework==3.15.2
+ drf-yasg==1.21.8
+ djangorestframework-simplejwt==5.3.1
