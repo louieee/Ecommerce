@@ -238,3 +238,4 @@ ws_test.py
 celerybeat-schedule.db
 certificate
 *.py~
+static
