@@ -114,7 +114,7 @@ class CategoryAPI(viewsets.ModelViewSet):
 class ProductBatchAPI(viewsets.ModelViewSet):
     queryset = ProductBatch.objects.order_by("-id")
     serializer_class = ProductBatchSerializer
-    permission_classes = (IsAuthenticated,)
+    # permission_classes = (IsAuthenticated,)
     http_method_names = ("post", "patch", "get")
 
     def filter_queryset(self, queryset):
